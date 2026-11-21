@@ -84,6 +84,8 @@ aegisub_src = files(
     'dialog_translation.cpp',
     'dialog_version_check.cpp',
     'dialog_video_details.cpp',
+  'dialog_align.cpp',
+  'image_position_picker.cpp',
     'dialog_video_properties.cpp',
     'export_fixstyle.cpp',
     'export_framerate.cpp',

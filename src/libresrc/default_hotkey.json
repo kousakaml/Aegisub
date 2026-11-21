@@ -1,368 +1,371 @@
 {
-	"Always" : {
-		"audio/commit" : [
+	"Always": {
+		"audio/commit": [
 			"KP_Enter"
 		],
-		"audio/play/selection" : [
+		"audio/play/selection": [
 			"KP_5"
 		],
-		"audio/play/selection/after" : [
+		"audio/play/selection/after": [
 			"KP_3"
 		],
-		"audio/play/selection/before" : [
+		"audio/play/selection/before": [
 			"KP_1"
 		],
-		"audio/stop" : [
+		"audio/stop": [
 			"KP_8"
 		],
-		"time/length/decrease" : [
+		"time/length/decrease": [
 			"KP_7"
 		],
-		"time/length/increase" : [
+		"time/length/increase": [
 			"KP_9"
 		],
-		"time/next" : [
+		"time/next": [
 			"KP_2"
 		],
-		"time/prev" : [
+		"time/prev": [
 			"KP_0"
 		],
-		"time/start/decrease" : [
+		"time/start/decrease": [
 			"KP_4"
 		],
-		"time/start/increase" : [
+		"time/start/increase": [
 			"KP_6"
 		]
 	},
-	"Audio" : {
-		"app/toggle/global_hotkeys" : [
+	"Audio": {
+		"app/toggle/global_hotkeys": [
 			"Ctrl-KP_Multiply"
 		],
-		"audio/commit" : [
+		"audio/commit": [
 			"Enter",
 			"G"
 		],
-		"audio/commit/default" : [
+		"audio/commit/default": [
 			"Shift-G"
 		],
-		"audio/play/line" : [
+		"audio/play/line": [
 			"R"
 		],
-		"audio/play/selection" : [
+		"audio/play/selection": [
 			"S",
 			"Space"
 		],
-		"audio/play/selection/after" : [
+		"audio/play/selection/after": [
 			"W"
 		],
-		"audio/play/selection/before" : [
+		"audio/play/selection/before": [
 			"Q"
 		],
-		"audio/play/selection/begin" : [
+		"audio/play/selection/begin": [
 			"E"
 		],
-		"audio/play/selection/end" : [
+		"audio/play/selection/end": [
 			"D"
 		],
-		"audio/play/to_end" : [
+		"audio/play/to_end": [
 			"T"
 		],
-		"audio/play/toggle" : [
+		"audio/play/toggle": [
 			"B"
 		],
-		"audio/scroll/left" : [
+		"audio/scroll/left": [
 			"A"
 		],
-		"audio/scroll/right" : [
+		"audio/scroll/right": [
 			"F"
 		],
-		"audio/stop" : [
+		"audio/stop": [
 			"H"
 		],
-		"time/lead/in" : [
+		"time/lead/in": [
 			"C"
 		],
-		"time/lead/out" : [
+		"time/lead/out": [
 			"V"
 		],
-		"time/length/decrease" : [
+		"time/length/decrease": [
 			"KP_Subtract"
 		],
-		"time/length/decrease/shift" : [
+		"time/length/decrease/shift": [
 			"Shift-KP_Subtract"
 		],
-		"time/length/increase" : [
+		"time/length/increase": [
 			"KP_Add"
 		],
-		"time/length/increase/shift" : [
+		"time/length/increase/shift": [
 			"Shift-KP_Add"
 		],
-		"time/next" : [
+		"time/next": [
 			"Right",
 			"X"
 		],
-		"time/prev" : [
+		"time/prev": [
 			"Left",
 			"Z"
 		]
 	},
-	"Default" : {
-		"app/exit" : [
+	"Default": {
+		"app/exit": [
 			"Ctrl-Q"
 		],
-		"app/options" : [
+		"app/options": [
 			"Alt-O"
 		],
-		"edit/find_replace" : [
+		"edit/find_replace": [
 			"Ctrl-H"
 		],
-		"edit/line/copy" : [
+		"edit/line/copy": [
 			"Ctrl-C"
 		],
-		"edit/line/cut" : [
+		"edit/line/cut": [
 			"Ctrl-X"
 		],
-		"edit/line/delete" : [
+		"edit/line/delete": [
 			"Ctrl-Delete"
 		],
-		"edit/line/split/before" : [
+		"edit/line/split/before": [
 			"Ctrl-D"
 		],
-		"edit/line/split/after" : [
+		"edit/line/split/after": [
 			"Ctrl-Shift-D"
 		],
-		"edit/line/paste" : [
+		"edit/line/paste": [
 			"Ctrl-V"
 		],
-		"edit/line/paste/over" : [
+		"edit/line/paste/over": [
 			"Ctrl-Shift-V"
 		],
-		"edit/redo" : [
+		"edit/redo": [
 			"Ctrl-Y"
 		],
-		"edit/undo" : [
+		"edit/undo": [
 			"Ctrl-Z"
 		],
-		"grid/line/next" : [
+		"grid/line/next": [
 			"Ctrl-KP_2"
 		],
-		"grid/line/prev" : [
+		"grid/line/prev": [
 			"Ctrl-KP_8"
 		],
-		"grid/move/down" : [
+		"grid/move/down": [
 			"Alt-Down"
 		],
-		"grid/move/up" : [
+		"grid/move/up": [
 			"Alt-Up"
 		],
-		"help/contents" : [
+		"help/contents": [
 			"F1"
 		],
-		"subtitle/find" : [
+		"subtitle/find": [
 			"Ctrl-F"
 		],
-		"subtitle/find/next" : [
+		"subtitle/find/next": [
 			"F3"
 		],
-		"subtitle/new" : [
+		"subtitle/new": [
 			"Ctrl-N"
 		],
-		"subtitle/open" : [
+		"subtitle/open": [
 			"Ctrl-O"
 		],
-		"subtitle/save" : [
+		"subtitle/save": [
 			"Ctrl-S",
 			"F2"
 		],
-		"subtitle/save/as" : [
+		"subtitle/save/as": [
 			"Ctrl-Shift-S"
 		],
-		"time/frame/current" : [
+		"time/frame/current": [
 			"Ctrl-6"
 		],
-		"time/shift" : [
+		"time/shift": [
 			"Ctrl-I"
 		],
-		"time/snap/end_video" : [
+		"time/snap/end_video": [
 			"Ctrl-4"
 		],
-		"time/snap/scene" : [
+		"time/snap/scene": [
 			"Ctrl-5"
 		],
-		"time/snap/start_video" : [
+		"time/snap/start_video": [
 			"Ctrl-3"
 		],
-		"video/focus_seek" : [
+		"video/focus_seek": [
 			"Ctrl-Space"
 		],
-		"video/frame/next" : [
+		"video/frame/next": [
 			"Ctrl-KP_6"
 		],
-		"video/frame/prev" : [
+		"video/frame/prev": [
 			"Ctrl-KP_4"
 		],
-		"video/jump" : [
+		"video/jump": [
 			"Ctrl-G"
 		],
-		"video/jump/end" : [
+		"video/jump/end": [
 			"Ctrl-2"
 		],
-		"video/jump/start" : [
+		"video/jump/start": [
 			"Ctrl-1"
 		],
-		"video/play" : [
+		"video/play": [
 			"Ctrl-P"
 		],
-		"video/zoom/in" : [
+		"video/zoom/in": [
 			"Ctrl-KP_Add"
 		],
-		"video/zoom/out" : [
+		"video/zoom/out": [
 			"Ctrl-KP_Subtract"
 		]
 	},
-	"Styling Assistant" : {
-		"audio/play/selection" : [
+	"Styling Assistant": {
+		"audio/play/selection": [
 			"End"
 		],
-		"grid/line/next" : [
+		"grid/line/next": [
 			"PageDown"
 		],
-		"grid/line/prev" : [
+		"grid/line/prev": [
 			"PageUp"
 		],
-		"tool/styling_assistant/commit" : [
+		"tool/styling_assistant/commit": [
 			"Enter",
 			"KP_Enter"
 		],
-		"tool/styling_assistant/preview" : [
+		"tool/styling_assistant/preview": [
 			"F8"
 		],
-		"video/play/line" : [
+		"video/play/line": [
 			"Home"
 		]
 	},
-	"Subtitle Edit Box" : {
-		"edit/color/outline" : [
+	"Subtitle Edit Box": {
+		"edit/color/outline": [
 			"Alt-3"
 		],
-		"edit/color/primary" : [
+		"edit/color/primary": [
 			"Alt-1"
 		],
-		"edit/color/secondary" : [
+		"edit/color/secondary": [
 			"Alt-2"
 		],
-		"edit/color/shadow" : [
+		"edit/color/shadow": [
 			"Alt-4"
 		],
-		"grid/line/next/create" : [
+		"grid/line/next/create": [
 			"Enter",
 			"KP_Enter"
 		]
 	},
-	"Subtitle Grid" : {
-		"subtitle/select/all" : [
+	"Subtitle Grid": {
+		"subtitle/select/all": [
 			"Ctrl-A"
 		],
-		"grid/fold/toggle" : [
+		"grid/fold/toggle": [
 			"Enter"
 		],
-		"video/frame/next" : [
+		"video/frame/next": [
 			"Right"
 		],
-		"video/frame/next/boundary" : [
+		"video/frame/next/boundary": [
 			"Ctrl-Right"
 		],
-		"video/frame/next/keyframe" : [
+		"video/frame/next/keyframe": [
 			"Shift-Right"
 		],
-		"video/frame/next/large" : [
+		"video/frame/next/large": [
 			"Alt-Right"
 		],
-		"video/frame/prev" : [
+		"video/frame/prev": [
 			"Left"
 		],
-		"video/frame/prev/boundary" : [
+		"video/frame/prev/boundary": [
 			"Ctrl-Left"
 		],
-		"video/frame/prev/keyframe" : [
+		"video/frame/prev/keyframe": [
 			"Shift-Left"
 		],
-		"video/frame/prev/large" : [
+		"video/frame/prev/large": [
 			"Alt-Left"
 		]
 	},
-	"Translation Assistant" : {
-		"audio/play/selection" : [
+	"Translation Assistant": {
+		"audio/play/selection": [
 			"End"
 		],
-		"tool/translation_assistant/commit" : [
+		"tool/translation_assistant/commit": [
 			"Enter",
 			"KP_Enter"
 		],
-		"tool/translation_assistant/insert_original" : [
+		"tool/translation_assistant/insert_original": [
 			"Insert"
 		],
-		"tool/translation_assistant/next" : [
+		"tool/translation_assistant/next": [
 			"PageDown"
 		],
-		"tool/translation_assistant/prev" : [
+		"tool/translation_assistant/prev": [
 			"PageUp"
 		],
-		"tool/translation_assistant/preview" : [
+		"tool/translation_assistant/preview": [
 			"F8"
 		],
-		"video/play/line" : [
+		"video/play/line": [
 			"Home"
 		]
 	},
-	"Video" : {
-		"video/frame/next" : [
+	"Video": {
+		"video/frame/next": [
 			"Right"
 		],
-		"video/frame/next/boundary" : [
+		"video/frame/next/boundary": [
 			"Ctrl-Right"
 		],
-		"video/frame/next/keyframe" : [
+		"video/frame/next/keyframe": [
 			"Shift-Right"
 		],
-		"video/frame/next/large" : [
+		"video/frame/next/large": [
 			"Alt-Right"
 		],
-		"video/frame/prev" : [
+		"video/frame/prev": [
 			"Left"
 		],
-		"video/frame/prev/boundary" : [
+		"video/frame/prev/boundary": [
 			"Ctrl-Left"
 		],
-		"video/frame/prev/keyframe" : [
+		"video/frame/prev/keyframe": [
 			"Shift-Left"
 		],
-		"video/frame/prev/large" : [
+		"video/frame/prev/large": [
 			"Alt-Left"
 		],
-		"video/tool/clip" : [
+		"video/tool/clip": [
 			"J"
 		],
-		"video/tool/cross" : [
+		"video/tool/cross": [
 			"A"
 		],
-		"video/tool/drag" : [
+		"video/tool/drag": [
 			"S"
 		],
 		"video/tool/perspective": [
 			"G"
 		],
-		"video/tool/rotate/xy" : [
+		"video/tool/rotate/xy": [
 			"F"
 		],
-		"video/tool/rotate/z" : [
+		"video/tool/rotate/z": [
 			"D"
 		],
-		"video/tool/scale" : [
+		"video/tool/scale": [
 			"H"
 		],
-		"video/tool/vector_clip" : [
+		"video/tool/vector_clip": [
 			"K"
+		],
+		"time/align": [
+			"KP_TAB"
 		]
 	}
 }

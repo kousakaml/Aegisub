@@ -375,7 +375,20 @@ struct time_prev final : public Command {
 }
 
 namespace cmd {
-	void init_time() {
+	
+struct time_align_subtitle_to_point final : public validate_video_loaded {
+	CMD_NAME("time/align")
+	CMD_ICON(button_align)
+	STR_MENU("Align subtitle to video")
+	STR_DISP("Align subtitle to video")
+	STR_HELP("Align subtitle to video by key points.")
+	void operator()(agi::Context* c) override {
+		c->videoController->Stop();
+		ShowAlignToVideoDialog(c);
+	}
+};
+
+void init_time() {
 		reg(std::make_unique<time_add_lead_both>());
 		reg(std::make_unique<time_add_lead_in>());
 		reg(std::make_unique<time_add_lead_out>());
@@ -394,5 +407,6 @@ namespace cmd {
 		reg(std::make_unique<time_snap_start_video>());
 		reg(std::make_unique<time_start_decrease>());
 		reg(std::make_unique<time_start_increase>());
-	}
+		reg(std::make_unique<time_align_subtitle_to_point>());
+}
 }

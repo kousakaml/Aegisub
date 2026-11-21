@@ -36,6 +36,11 @@ class ColourButton: public wxButton {
 	void UpdateBitmap();
 
 public:
+	void SetColor(agi::Color color) {
+		SetClientData(0, new agi::Color(color));
+		SetLabel(wxEmptyString);
+		Refresh();
+	}
 	/// Constructor
 	/// @param parent Parent window
 	/// @param size Size of the bitmap (note: not the size of the button)
