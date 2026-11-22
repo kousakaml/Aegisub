@@ -1,4 +1,4 @@
-// Copyright (c) 2005, Rodrigo Braz Monteiro
+// Copyright (c) 2005, Rodrigo Braz Monteiro, Niels Martin Hansen
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,571 +27,347 @@
 //
 // Aegisub Project http://www.aegisub.org/
 
-#include "subs_edit_ctrl.h"
+/// @file frame_main.cpp
+/// @brief Main window creation and control management
+/// @ingroup main_ui
 
-#include "ass_dialogue.h"
-#include "command/command.h"
-#include "compat.h"
-#include "format.h"
-#include "options.h"
+#include "frame_main.h"
+
 #include "include/aegisub/context.h"
-#include "include/aegisub/spellchecker.h"
-#include "selection_controller.h"
-#include "text_selection_controller.h"
-#include "thesaurus.h"
+#include "include/aegisub/menu.h"
+#include "include/aegisub/toolbar.h"
+#include "include/aegisub/hotkey.h"
+
+#include "ass_file.h"
+#include "async_video_provider.h"
+#include "audio_controller.h"
+#include "audio_box.h"
+#include "base_grid.h"
+#include "compat.h"
+#include "command/command.h"
+#include "dialog_detached_video.h"
+#include "dialog_manager.h"
+#include "libresrc/libresrc.h"
+#include "main.h"
+#include "options.h"
+#include "project.h"
+#include "subs_controller.h"
+#include "subs_edit_box.h"
 #include "utils.h"
+#include "version.h"
+#include "video_box.h"
+#include "video_controller.h"
+#include "video_display.h"
 
-#include <libaegisub/ass/dialogue_parser.h>
-#include <libaegisub/calltip_provider.h>
-#include <libaegisub/character_count.h>
-#include <libaegisub/spellchecker.h>
+#include <libaegisub/dispatch.h>
+#include <libaegisub/log.h>
+#include <libaegisub/make_unique.h>
 
-#include <boost/algorithm/string/predicate.hpp>
-#include <boost/algorithm/string/replace.hpp>
-#include <functional>
+#include <wx/dnd.h>
+#include <wx/msgdlg.h>
+#include <wx/sizer.h>
+#include <wx/statline.h>
+#include <wx/sysopt.h>
 
-#include <wx/clipbrd.h>
-#include <wx/intl.h>
-#include <wx/menu.h>
-#include <wx/settings.h>
+#ifdef _WIN32
+#include <imm.h>
+#pragma comment(lib, "imm32.lib")
 
-// Maximum number of languages (locales)
-// It should be above 100 (at least 242) and probably not more than 1000
-#define LANGS_MAX 1000
-
-/// Event ids
-// Check menu.h for id range allocation before editing this enum
-enum {
-	EDIT_MENU_SPLIT_PRESERVE = (wxID_HIGHEST + 1) + 4000,
-	EDIT_MENU_SPLIT_ESTIMATE,
-	EDIT_MENU_SPLIT_VIDEO,
-	EDIT_MENU_CUT,
-	EDIT_MENU_COPY,
-	EDIT_MENU_PASTE,
-	EDIT_MENU_SELECT_ALL,
-	EDIT_MENU_ADD_TO_DICT,
-	EDIT_MENU_REMOVE_FROM_DICT,
-	EDIT_MENU_SUGGESTION,
-	EDIT_MENU_SUGGESTIONS,
-	EDIT_MENU_THESAURUS = (wxID_HIGHEST + 1) + 5000,
-	EDIT_MENU_THESAURUS_SUGS,
-	EDIT_MENU_DIC_LANGUAGE = (wxID_HIGHEST + 1) + 6000,
-	EDIT_MENU_DIC_LANGS,
-	EDIT_MENU_THES_LANGUAGE = EDIT_MENU_DIC_LANGUAGE + LANGS_MAX,
-	EDIT_MENU_THES_LANGS
-};
-
-SubsTextEditCtrl::SubsTextEditCtrl(wxWindow* parent, wxSize wsize, long style, agi::Context *context)
-: wxStyledTextCtrl(parent, -1, wxDefaultPosition, wsize, style)
-, spellchecker(SpellCheckerFactory::GetSpellChecker())
-, thesaurus(std::make_unique<Thesaurus>())
-, context(context)
-{
-	osx::ime::inject(this);
-
-	// Set properties
-	SetWrapMode(wxSTC_WRAP_WORD);
-	SetMarginWidth(1,0);
-	UsePopUp(wxSTC_POPUP_NEVER);
-	SetStyles();
-
-	// Set hotkeys
-	CmdKeyClear(wxSTC_KEY_RETURN,wxSTC_KEYMOD_CTRL);
-	CmdKeyClear(wxSTC_KEY_RETURN,wxSTC_KEYMOD_SHIFT);
-	CmdKeyClear(wxSTC_KEY_RETURN,wxSTC_KEYMOD_NORM);
-	CmdKeyClear(wxSTC_KEY_TAB,wxSTC_KEYMOD_NORM);
-	CmdKeyClear(wxSTC_KEY_TAB,wxSTC_KEYMOD_SHIFT);
-	CmdKeyClear('D',wxSTC_KEYMOD_CTRL);
-	CmdKeyClear('L',wxSTC_KEYMOD_CTRL);
-	CmdKeyClear('L',wxSTC_KEYMOD_CTRL | wxSTC_KEYMOD_SHIFT);
-	CmdKeyClear('T',wxSTC_KEYMOD_CTRL);
-	CmdKeyClear('T',wxSTC_KEYMOD_CTRL | wxSTC_KEYMOD_SHIFT);
-	CmdKeyClear('U',wxSTC_KEYMOD_CTRL);
-
-	using std::bind;
-
-	Bind(wxEVT_CHAR_HOOK, &SubsTextEditCtrl::OnKeyDown, this);
-
-	Bind(wxEVT_MENU, bind(&SubsTextEditCtrl::Cut, this), EDIT_MENU_CUT);
-	Bind(wxEVT_MENU, bind(&SubsTextEditCtrl::Copy, this), EDIT_MENU_COPY);
-	Bind(wxEVT_MENU, bind(&SubsTextEditCtrl::Paste, this), EDIT_MENU_PASTE);
-	Bind(wxEVT_MENU, bind(&SubsTextEditCtrl::SelectAll, this), EDIT_MENU_SELECT_ALL);
-
-	if (context) {
-		Bind(wxEVT_MENU, bind(&cmd::call, "edit/line/split/preserve", context), EDIT_MENU_SPLIT_PRESERVE);
-		Bind(wxEVT_MENU, bind(&cmd::call, "edit/line/split/estimate", context), EDIT_MENU_SPLIT_ESTIMATE);
-		Bind(wxEVT_MENU, bind(&cmd::call, "edit/line/split/video", context), EDIT_MENU_SPLIT_VIDEO);
-	}
-
-	Bind(wxEVT_CONTEXT_MENU, &SubsTextEditCtrl::OnContextMenu, this);
-	Bind(wxEVT_IDLE, std::bind(&SubsTextEditCtrl::UpdateCallTip, this));
-	Bind(wxEVT_STC_DOUBLECLICK, &SubsTextEditCtrl::OnDoubleClick, this);
-	Bind(wxEVT_STC_STYLENEEDED, [this](wxStyledTextEvent&) {
-		{
-			std::string text = GetTextRaw().data();
-			if (text == line_text) return;
-			line_text = std::move(text);
+namespace {
+	void DisableImeRecursively(wxWindow *win, wxWindow *keep_ime_root) {
+		if (!win || win == keep_ime_root) return;
+		if (HWND hwnd = static_cast<HWND>(win->GetHWND())) {
+			ImmAssociateContext(hwnd, nullptr);
 		}
-
-		UpdateStyle();
-	});
-
-	BindConnection(OPT_SUB("Subtitle/Edit Box/Font Face", &SubsTextEditCtrl::SetStyles, this));
-	BindConnection(OPT_SUB("Subtitle/Edit Box/Font Size", &SubsTextEditCtrl::SetStyles, this));
-	Subscribe("Normal");
-	Subscribe("Comment");
-	Subscribe("Drawing Command");
-	Subscribe("Drawing X");
-	Subscribe("Drawing Y");
-	BindConnection(OPT_SUB("Colour/Subtitle/Syntax/Underline/Drawing Endpoint", &SubsTextEditCtrl::SetStyles, this));
-	Subscribe("Brackets");
-	Subscribe("Slashes");
-	Subscribe("Tags");
-	Subscribe("Error");
-	Subscribe("Parameters");
-	Subscribe("Line Break");
-	Subscribe("Karaoke Template");
-	Subscribe("Karaoke Variable");
-
-	BindConnection(OPT_SUB("Colour/Subtitle/Background", &SubsTextEditCtrl::SetStyles, this));
-	BindConnection(OPT_SUB("Subtitle/Highlight/Syntax", &SubsTextEditCtrl::UpdateStyle, this));
-	BindConnection(OPT_SUB("App/Call Tips", &SubsTextEditCtrl::UpdateCallTip, this));
-
-	Bind(wxEVT_MENU, [this](wxCommandEvent&) {
-		if (spellchecker) spellchecker->AddWord(currentWord);
-		UpdateStyle();
-		SetFocus();
-	}, EDIT_MENU_ADD_TO_DICT);
-
-	Bind(wxEVT_MENU, [this](wxCommandEvent&) {
-		if (spellchecker) spellchecker->RemoveWord(currentWord);
-		UpdateStyle();
-		SetFocus();
-	}, EDIT_MENU_REMOVE_FROM_DICT);
+		for (wxWindow *child : win->GetChildren()) {
+			DisableImeRecursively(child, keep_ime_root);
+		}
+	}
 }
-
-SubsTextEditCtrl::~SubsTextEditCtrl() {
-}
-
-void SubsTextEditCtrl::Subscribe(std::string const& name) {
-	BindConnection(OPT_SUB("Colour/Subtitle/Syntax/" + name, &SubsTextEditCtrl::SetStyles, this));
-	BindConnection(OPT_SUB("Colour/Subtitle/Syntax/Background/" + name, &SubsTextEditCtrl::SetStyles, this));
-	BindConnection(OPT_SUB("Colour/Subtitle/Syntax/Bold/" + name, &SubsTextEditCtrl::SetStyles, this));
-}
-
-BEGIN_EVENT_TABLE(SubsTextEditCtrl,wxStyledTextCtrl)
-	EVT_KILL_FOCUS(SubsTextEditCtrl::OnLoseFocus)
-
-	EVT_MENU_RANGE(EDIT_MENU_SUGGESTIONS,EDIT_MENU_THESAURUS-1,SubsTextEditCtrl::OnUseSuggestion)
-	EVT_MENU_RANGE(EDIT_MENU_THESAURUS_SUGS,EDIT_MENU_DIC_LANGUAGE-1,SubsTextEditCtrl::OnUseSuggestion)
-	EVT_MENU_RANGE(EDIT_MENU_DIC_LANGS,EDIT_MENU_THES_LANGUAGE-1,SubsTextEditCtrl::OnSetDicLanguage)
-	EVT_MENU_RANGE(EDIT_MENU_THES_LANGS,EDIT_MENU_THES_LANGS+LANGS_MAX,SubsTextEditCtrl::OnSetThesLanguage)
-END_EVENT_TABLE()
-
-void SubsTextEditCtrl::OnLoseFocus(wxFocusEvent &event) {
-	CallTipCancel();
-	event.Skip();
-}
-
-void SubsTextEditCtrl::OnKeyDown(wxKeyEvent &event) {
-	if (osx::ime::process_key_event(this, event)) return;
-	event.Skip();
-
-	bool linebreak = event.GetKeyCode() == WXK_RETURN && event.GetModifiers() == wxMOD_SHIFT;
-#ifndef __WXMAC__
-	bool hardspace = event.GetKeyCode() == WXK_SPACE && event.GetModifiers() == (wxMOD_CMD | wxMOD_SHIFT);
-#else
-	bool hardspace = event.GetKeyCode() == WXK_SPACE && event.GetModifiers() == wxMOD_ALT;
 #endif
 
-	// Workaround for wxSTC eating tabs.
-	if (event.GetKeyCode() == WXK_TAB)
-		Navigate(event.ShiftDown() ? wxNavigationKeyEvent::IsBackward : wxNavigationKeyEvent::IsForward);
-	else if (linebreak || hardspace) {
-		auto sel_start = GetSelectionStart(), sel_end = GetSelectionEnd();
-		wxCharBuffer old = GetTextRaw();
-		std::string data(old.data(), sel_start);
-		if (linebreak) {
-			data.append(OPT_GET("Subtitle/Edit Box/Soft Line Break")->GetBool() ? "\\n" : "\\N");
-		} else if (hardspace) {
-			data.append("\\h");
-		}
-		data.append(old.data() + sel_end, old.length() - sel_end);
-		SetTextRaw(data.c_str());
+enum {
+	ID_APP_TIMER_STATUSCLEAR = 12002
+};
 
-		SetSelection(sel_start + 2, sel_start + 2);
-		event.Skip(false);
+#ifdef WITH_STARTUPLOG
+#define StartupLog(a) MessageBox(0, a, "Aegisub startup log", 0)
+#else
+#define StartupLog(a) LOG_I("frame_main/init") << a
+#endif
+
+/// Handle files drag and dropped onto Aegisub
+class AegisubFileDropTarget final : public wxFileDropTarget {
+	agi::Context *context;
+public:
+	AegisubFileDropTarget(agi::Context *context) : context(context) { }
+	bool OnDropFiles(wxCoord, wxCoord, wxArrayString const& filenames) override {
+		std::vector<agi::fs::path> files;
+		for (wxString const& fn : filenames)
+			files.push_back(from_wx(fn));
+		agi::dispatch::Main().Async([=] { context->project->LoadList(files); });
+		return true;
+	}
+};
+
+FrameMain::FrameMain()
+: wxFrame(nullptr, -1, "", wxDefaultPosition, wxSize(920,700), wxDEFAULT_FRAME_STYLE | wxCLIP_CHILDREN)
+, context(agi::make_unique<agi::Context>())
+{
+	StartupLog("Entering FrameMain constructor");
+
+#ifdef __WXGTK__
+	// XXX HACK XXX
+	// We need to set LC_ALL to "" here for input methods to work reliably.
+	setlocale(LC_ALL, "");
+
+	// However LC_NUMERIC must be "C", otherwise some parsing fails.
+	setlocale(LC_NUMERIC, "C");
+#endif
+
+	StartupLog("Initializing context controls");
+	context->ass->AddCommitListener(&FrameMain::UpdateTitle, this);
+	context->subsController->AddFileOpenListener(&FrameMain::OnSubtitlesOpen, this);
+	context->subsController->AddFileSaveListener(&FrameMain::UpdateTitle, this);
+	context->project->AddAudioProviderListener(&FrameMain::OnAudioOpen, this);
+	context->project->AddVideoProviderListener(&FrameMain::OnVideoOpen, this);
+
+	StartupLog("Initializing context frames");
+	context->parent = this;
+	context->frame = this;
+
+	StartupLog("Apply saved Maximized state");
+	if (OPT_GET("App/Maximized")->GetBool()) Maximize(true);
+
+	StartupLog("Initialize toolbar");
+	wxSystemOptions::SetOption("msw.remap", 0);
+	OPT_SUB("App/Show Toolbar", &FrameMain::EnableToolBar, this);
+	EnableToolBar(*OPT_GET("App/Show Toolbar"));
+
+	StartupLog("Initialize menu bar");
+	menu::GetMenuBar("main", this, (wxID_HIGHEST + 1) + 10000, context.get());
+
+	StartupLog("Create status bar");
+	CreateStatusBar(2);
+
+	StartupLog("Set icon");
+#ifdef _WIN32
+	SetIcon(wxICON(wxicon));
+#else
+	wxIcon icon;
+	icon.CopyFromBitmap(GETIMAGE(wxicon));
+	SetIcon(icon);
+#endif
+
+	StartupLog("Create views and inner main window controls");
+	InitContents();
+	OPT_SUB("Video/Detached/Enabled", &FrameMain::OnVideoDetach, this);
+
+	StartupLog("Set up drag/drop target");
+	SetDropTarget(new AegisubFileDropTarget(context.get()));
+
+	StartupLog("Load default file");
+	context->project->CloseSubtitles();
+
+	StartupLog("Display main window");
+	AddFullScreenButton(this);
+	Show();
+	SetDisplayMode(1, 1);
+
+	StartupLog("Leaving FrameMain constructor");
+}
+
+FrameMain::~FrameMain () {
+	context->project->CloseAudio();
+	context->project->CloseVideo();
+
+	DestroyChildren();
+}
+
+void FrameMain::EnableToolBar(agi::OptionValue const& opt) {
+	if (opt.GetBool()) {
+		if (!GetToolBar()) {
+			toolbar::AttachToolbar(this, "main", context.get(), "Default");
+			GetToolBar()->Realize();
+		}
+	}
+	else if (wxToolBar *old_tb = GetToolBar()) {
+		SetToolBar(nullptr);
+		delete old_tb;
+		Layout();
 	}
 }
 
-void SubsTextEditCtrl::SetSyntaxStyle(int id, wxFont &font, std::string const& name, wxColor const& default_background) {
-	StyleSetFont(id, font);
-	StyleSetBold(id, OPT_GET("Colour/Subtitle/Syntax/Bold/" + name)->GetBool());
-	StyleSetForeground(id, to_wx(OPT_GET("Colour/Subtitle/Syntax/" + name)->GetColor()));
-	const agi::OptionValue *background = OPT_GET("Colour/Subtitle/Syntax/Background/" + name);
-	if (background->GetType() == agi::OptionType::Color)
-		StyleSetBackground(id, to_wx(background->GetColor()));
-	else
-		StyleSetBackground(id, default_background);
+void FrameMain::InitContents() {
+	StartupLog("Create background panel");
+	auto Panel = new wxPanel(this, -1, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL | wxCLIP_CHILDREN);
+
+	StartupLog("Create subtitles grid");
+	context->subsGrid = new BaseGrid(Panel, context.get());
+
+	StartupLog("Create video box");
+	videoBox = new VideoBox(Panel, false, context.get());
+
+	StartupLog("Create audio box");
+	context->audioBox = audioBox = new AudioBox(Panel, context.get());
+
+	StartupLog("Create subtitle editing box");
+	auto EditBox = new SubsEditBox(Panel, context.get());
+
+#ifdef _WIN32
+	DisableImeRecursively(this, EditBox);
+#endif
+
+	StartupLog("Arrange main sizers");
+	ToolsSizer = new wxBoxSizer(wxVERTICAL);
+	ToolsSizer->Add(audioBox, 0, wxEXPAND);
+	ToolsSizer->Add(EditBox, 1, wxEXPAND);
+	TopSizer = new wxBoxSizer(wxHORIZONTAL);
+	TopSizer->Add(videoBox, 0, wxEXPAND, 0);
+	TopSizer->Add(ToolsSizer, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 5);
+	MainSizer = new wxBoxSizer(wxVERTICAL);
+	MainSizer->Add(new wxStaticLine(Panel),0,wxEXPAND | wxALL,0);
+	MainSizer->Add(TopSizer,0,wxEXPAND | wxALL,0);
+	MainSizer->Add(context->subsGrid,1,wxEXPAND | wxALL,0);
+	Panel->SetSizer(MainSizer);
+
+	StartupLog("Perform layout");
+	Layout();
+	StartupLog("Leaving InitContents");
 }
 
-void SubsTextEditCtrl::SetStyles() {
-	wxFont font = *wxNORMAL_FONT;
-	font.SetEncoding(wxFONTENCODING_DEFAULT); // this solves problems with some fonts not working properly
-	wxString fontname = FontFace("Subtitle/Edit Box");
-	if (!fontname.empty()) font.SetFaceName(fontname);
-	font.SetPointSize(OPT_GET("Subtitle/Edit Box/Font Size")->GetInt());
+void FrameMain::SetDisplayMode(int video, int audio) {
+	if (!IsShownOnScreen()) return;
 
-	auto default_background = to_wx(OPT_GET("Colour/Subtitle/Background")->GetColor());
+	bool sv = false, sa = false;
 
-	namespace ss = agi::ass::SyntaxStyle;
-	SetSyntaxStyle(ss::NORMAL, font, "Normal", default_background);
-	SetSyntaxStyle(ss::COMMENT, font, "Comment", default_background);
-	SetSyntaxStyle(ss::DRAWING_CMD, font, "Drawing Command", default_background);
-	SetSyntaxStyle(ss::DRAWING_X, font, "Drawing X", default_background);
-	SetSyntaxStyle(ss::DRAWING_Y, font, "Drawing Y", default_background);
-	SetSyntaxStyle(ss::DRAWING_ENDPOINT_X, font, "Drawing X", default_background);
-	SetSyntaxStyle(ss::DRAWING_ENDPOINT_Y, font, "Drawing Y", default_background);
-	StyleSetUnderline(ss::DRAWING_ENDPOINT_X, OPT_GET("Colour/Subtitle/Syntax/Underline/Drawing Endpoint")->GetBool());
-	StyleSetUnderline(ss::DRAWING_ENDPOINT_Y, OPT_GET("Colour/Subtitle/Syntax/Underline/Drawing Endpoint")->GetBool());
-	SetSyntaxStyle(ss::OVERRIDE, font, "Brackets", default_background);
-	SetSyntaxStyle(ss::PUNCTUATION, font, "Slashes", default_background);
-	SetSyntaxStyle(ss::TAG, font, "Tags", default_background);
-	SetSyntaxStyle(ss::ERROR, font, "Error", default_background);
-	SetSyntaxStyle(ss::PARAMETER, font, "Parameters", default_background);
-	SetSyntaxStyle(ss::LINE_BREAK, font, "Line Break", default_background);
-	SetSyntaxStyle(ss::KARAOKE_TEMPLATE, font, "Karaoke Template", default_background);
-	SetSyntaxStyle(ss::KARAOKE_VARIABLE, font, "Karaoke Variable", default_background);
+	if (video == -1) sv = showVideo;
+	else if (video)  sv = context->project->VideoProvider() && !context->dialog->Get<DialogDetachedVideo>();
 
-	SetCaretForeground(StyleGetForeground(ss::NORMAL));
-	StyleSetBackground(wxSTC_STYLE_DEFAULT, default_background);
+	if (audio == -1) sa = showAudio;
+	else if (audio)  sa = !!context->project->AudioProvider();
 
-	// Misspelling indicator
-	IndicatorSetStyle(0,wxSTC_INDIC_SQUIGGLE);
-	IndicatorSetForeground(0,wxColour(255,0,0));
+	// See if anything changed
+	if (sv == showVideo && sa == showAudio) return;
 
-	// IME pending text indicator
-	IndicatorSetStyle(1, wxSTC_INDIC_PLAIN);
-	IndicatorSetUnder(1, true);
+	showVideo = sv;
+	showAudio = sa;
+
+	bool didFreeze = !IsFrozen();
+	if (didFreeze) Freeze();
+
+	context->videoController->Stop();
+
+	TopSizer->Show(videoBox, showVideo, true);
+	ToolsSizer->Show(audioBox, showAudio, true);
+
+	MainSizer->Layout();
+	Layout();
+
+	if (didFreeze) Thaw();
 }
 
-void SubsTextEditCtrl::UpdateStyle() {
-	AssDialogue *diag = context ? context->selectionController->GetActiveLine() : nullptr;
-	bool template_line = diag && diag->Comment && (boost::istarts_with(diag->Effect.get(), "template") || boost::istarts_with(diag->Effect.get(), "mixin"));
+void FrameMain::UpdateTitle() {
+	wxString newTitle;
+	if (context->subsController->IsModified()) newTitle << "* ";
+	newTitle << context->subsController->Filename().filename().wstring();
 
-	tokenized_line = agi::ass::TokenizeDialogueBody(line_text, template_line);
-	agi::ass::SplitWords(line_text, tokenized_line);
+#ifndef __WXMAC__
+	newTitle << " - Aegisub " << GetAegisubLongVersionString();
+#endif
 
-	cursor_pos = -1;
-	UpdateCallTip();
+#if defined(__WXMAC__)
+	// On Mac, set the mark in the close button
+	OSXSetModified(context->subsController->IsModified());
+#endif
 
-	StartStyling(0);
+	if (GetTitle() != newTitle) SetTitle(newTitle);
+}
 
-	if (!OPT_GET("Subtitle/Highlight/Syntax")->GetBool()) {
-		SetStyling(line_text.size(), 0);
+void FrameMain::OnVideoOpen(AsyncVideoProvider *provider) {
+	if (!provider) {
+		SetDisplayMode(0, -1);
 		return;
 	}
 
-	if (line_text.empty()) return;
-
-	SetIndicatorCurrent(0);
-	size_t pos = 0;
-	for (auto const& style_range : agi::ass::SyntaxHighlight(line_text, tokenized_line, spellchecker.get())) {
-		if (style_range.type == agi::ass::SyntaxStyle::SPELLING) {
-			SetStyling(style_range.length, agi::ass::SyntaxStyle::NORMAL);
-			IndicatorFillRange(pos, style_range.length);
-		}
-		else {
-			SetStyling(style_range.length, style_range.type);
-			IndicatorClearRange(pos, style_range.length);
-		}
-		pos += style_range.length;
-	}
-}
-
-void SubsTextEditCtrl::UpdateCallTip() {
-	if (!OPT_GET("App/Call Tips")->GetBool()) return;
-
-	int pos = GetCurrentPos();
-	if (pos == cursor_pos) return;
-	cursor_pos = pos;
-
-	agi::Calltip new_calltip = agi::GetCalltip(tokenized_line, line_text, pos);
-
-	if (!new_calltip.text) {
-		CallTipCancel();
-		return;
-	}
-
-	if (!CallTipActive() || calltip_position != new_calltip.tag_position || calltip_text != new_calltip.text)
-		CallTipShow(new_calltip.tag_position, wxString::FromUTF8Unchecked(new_calltip.text));
-
-	calltip_position = new_calltip.tag_position;
-	calltip_text = new_calltip.text;
-
-	CallTipSetHighlight(new_calltip.highlight_start, new_calltip.highlight_end);
-}
-
-void SubsTextEditCtrl::SetTextTo(std::string const& text) {
-	osx::ime::invalidate(this);
-	SetEvtHandlerEnabled(false);
 	Freeze();
+	int vidx = provider->GetWidth(), vidy = provider->GetHeight();
 
-	auto insertion_point = GetInsertionPoint();
-	if (static_cast<size_t>(insertion_point) > line_text.size())
-		line_text = GetTextRaw().data();
-	auto old_pos = agi::CharacterCount(std::string_view(line_text).substr(0, insertion_point), 0);
-	line_text.clear();
+	// Set zoom level based on video resolution and window size
+	double zoom = context->videoDisplay->GetZoom();
+	wxSize windowSize = GetSize();
+	if (vidx*3*zoom > windowSize.GetX()*4 || vidy*4*zoom > windowSize.GetY()*6)
+		context->videoDisplay->SetWindowZoom(zoom * .25);
+	else if (vidx*3*zoom > windowSize.GetX()*2 || vidy*4*zoom > windowSize.GetY()*3)
+		context->videoDisplay->SetWindowZoom(zoom * .5);
 
-	if (context) {
-		context->textSelectionController->SetSelection(0, 0);
-		SetTextRaw(text.c_str());
-		auto pos = agi::IndexOfCharacter(text, old_pos);
-		context->textSelectionController->SetSelection(pos, pos);
-	}
-	else {
-		SetSelection(0, 0);
-		SetTextRaw(text.c_str());
-		auto pos = agi::IndexOfCharacter(text, old_pos);
-		SetSelection(pos, pos);
-	}
+	SetDisplayMode(1,-1);
 
-	SetEvtHandlerEnabled(true);
+	if (OPT_GET("Video/Detached/Enabled")->GetBool() && !context->dialog->Get<DialogDetachedVideo>())
+		cmd::call("video/detach", context.get());
 	Thaw();
 }
 
-void SubsTextEditCtrl::Paste() {
-	std::string data = GetClipboard();
-
-	boost::replace_all(data, "\r\n", "\\N");
-	boost::replace_all(data, "\n", "\\N");
-	boost::replace_all(data, "\r", "\\N");
-
-	wxCharBuffer old = GetTextRaw();
-	data.insert(0, old.data(), GetSelectionStart());
-	int sel_start = data.size();
-	data.append(old.data() + GetSelectionEnd());
-
-	SetTextRaw(data.c_str());
-
-	SetSelectionStart(sel_start);
-	SetSelectionEnd(sel_start);
+void FrameMain::OnVideoDetach(agi::OptionValue const& opt) {
+	if (opt.GetBool())
+		SetDisplayMode(0, -1);
+	else if (context->project->VideoProvider())
+		SetDisplayMode(1, -1);
 }
 
-void SubsTextEditCtrl::OnContextMenu(wxContextMenuEvent &event) {
-	wxPoint pos = event.GetPosition();
-	int activePos;
-	if (pos == wxDefaultPosition)
-		activePos = GetCurrentPos();
+void FrameMain::StatusTimeout(wxString text,int ms) {
+	SetStatusText(text,1);
+	StatusClear.SetOwner(this, ID_APP_TIMER_STATUSCLEAR);
+	StatusClear.Start(ms,true);
+}
+
+BEGIN_EVENT_TABLE(FrameMain, wxFrame)
+	EVT_TIMER(ID_APP_TIMER_STATUSCLEAR, FrameMain::OnStatusClear)
+	EVT_CLOSE(FrameMain::OnCloseWindow)
+	EVT_CHAR_HOOK(FrameMain::OnKeyDown)
+	EVT_MOUSEWHEEL(FrameMain::OnMouseWheel)
+END_EVENT_TABLE()
+
+void FrameMain::OnCloseWindow(wxCloseEvent &event) {
+	wxEventBlocker blocker(this, wxEVT_CLOSE_WINDOW);
+
+	context->videoController->Stop();
+	context->audioController->Stop();
+
+	// Ask user if he wants to save first
+	if (context->subsController->TryToClose(event.CanVeto()) == wxCANCEL) {
+		event.Veto();
+		return;
+	}
+
+	context->dialog.reset();
+
+	// Store maximization state
+	OPT_SET("App/Maximized")->SetBool(IsMaximized());
+
+	Destroy();
+}
+
+void FrameMain::OnStatusClear(wxTimerEvent &) {
+	SetStatusText("",1);
+}
+
+void FrameMain::OnAudioOpen(agi::AudioProvider *provider) {
+	if (provider)
+		SetDisplayMode(-1, 1);
 	else
-		activePos = PositionFromPoint(ScreenToClient(pos));
-
-	currentWordPos = GetBoundsOfWordAtPosition(activePos);
-	currentWord = line_text.substr(currentWordPos.first, currentWordPos.second);
-
-	wxMenu menu;
-	if (spellchecker) {
-		AddSpellCheckerEntries(menu);
-
-		// Append language list
-		menu.Append(-1, _("Spell checker language"), GetLanguagesMenu(
-			EDIT_MENU_DIC_LANGS,
-			to_wx(OPT_GET("Tool/Spell Checker/Language")->GetString()),
-			to_wx(spellchecker->GetLanguageList())));
-		menu.AppendSeparator();
-	}
-
-	AddThesaurusEntries(menu);
-
-	// Standard actions
-	menu.Append(EDIT_MENU_CUT,_("Cu&t"))->Enable(GetSelectionStart()-GetSelectionEnd() != 0);
-	menu.Append(EDIT_MENU_COPY,_("&Copy"))->Enable(GetSelectionStart()-GetSelectionEnd() != 0);
-	menu.Append(EDIT_MENU_PASTE,_("&Paste"))->Enable(CanPaste());
-	menu.AppendSeparator();
-	menu.Append(EDIT_MENU_SELECT_ALL,_("Select &All"));
-
-	// Split
-	if (context) {
-		menu.AppendSeparator();
-		menu.Append(EDIT_MENU_SPLIT_PRESERVE, _("Split at cursor (preserve times)"));
-		menu.Append(EDIT_MENU_SPLIT_ESTIMATE, _("Split at cursor (estimate times)"));
-		cmd::Command *split_video = cmd::get("edit/line/split/video");
-		menu.Append(EDIT_MENU_SPLIT_VIDEO, split_video->StrMenu(context))->Enable(split_video->Validate(context));
-	}
-
-	PopupMenu(&menu);
+		SetDisplayMode(-1, 0);
 }
 
-void SubsTextEditCtrl::OnDoubleClick(wxStyledTextEvent &evt) {
-	int pos = evt.GetPosition();
-	if (pos == -1 && !tokenized_line.empty()) {
-		auto tok = tokenized_line.back();
-		SetSelection(line_text.size() - tok.length, line_text.size());
-	}
-	else {
-		auto bounds = GetBoundsOfWordAtPosition(evt.GetPosition());
-		if (bounds.second != 0)
-			SetSelection(bounds.first, bounds.first + bounds.second);
-		else
-			evt.Skip();
-	}
+void FrameMain::OnSubtitlesOpen() {
+	UpdateTitle();
+	SetDisplayMode(1, 1);
 }
 
-void SubsTextEditCtrl::AddSpellCheckerEntries(wxMenu &menu) {
-	if (currentWord.empty()) return;
-
-	if (spellchecker->CanRemoveWord(currentWord))
-		menu.Append(EDIT_MENU_REMOVE_FROM_DICT, fmt_tl("Remove \"%s\" from dictionary", currentWord));
-
-	sugs = spellchecker->GetSuggestions(currentWord);
-	if (spellchecker->CheckWord(currentWord)) {
-		if (sugs.empty())
-			menu.Append(EDIT_MENU_SUGGESTION,_("No spell checker suggestions"))->Enable(false);
-		else {
-			auto subMenu = new wxMenu;
-			for (size_t i = 0; i < sugs.size(); ++i)
-				subMenu->Append(EDIT_MENU_SUGGESTIONS+i, to_wx(sugs[i]));
-
-			menu.Append(-1, fmt_tl("Spell checker suggestions for \"%s\"", currentWord), subMenu);
-		}
-	}
-	else {
-		if (sugs.empty())
-			menu.Append(EDIT_MENU_SUGGESTION,_("No correction suggestions"))->Enable(false);
-
-		for (size_t i = 0; i < sugs.size(); ++i)
-			menu.Append(EDIT_MENU_SUGGESTIONS+i, to_wx(sugs[i]));
-
-		// Append "add word"
-		menu.Append(EDIT_MENU_ADD_TO_DICT, fmt_tl("Add \"%s\" to dictionary", currentWord))->Enable(spellchecker->CanAddWord(currentWord));
-	}
+void FrameMain::OnKeyDown(wxKeyEvent &event) {
+	hotkey::check("Main Frame", context.get(), event);
 }
 
-void SubsTextEditCtrl::AddThesaurusEntries(wxMenu &menu) {
-	if (currentWord.empty()) return;
-
-	auto results = thesaurus->Lookup(currentWord);
-
-	thesSugs.clear();
-
-	if (results.size()) {
-		auto thesMenu = new wxMenu;
-
-		int curThesEntry = 0;
-		for (auto const& result : results) {
-			// Single word, insert directly
-			if (result.second.empty()) {
-				thesMenu->Append(EDIT_MENU_THESAURUS_SUGS+curThesEntry, to_wx(result.first));
-				thesSugs.push_back(result.first);
-				++curThesEntry;
-			}
-			// Multiple, create submenu
-			else {
-				auto subMenu = new wxMenu;
-				for (auto const& sug : result.second) {
-					subMenu->Append(EDIT_MENU_THESAURUS_SUGS+curThesEntry, to_wx(sug));
-					thesSugs.push_back(sug);
-					++curThesEntry;
-				}
-
-				thesMenu->Append(-1, to_wx(result.first), subMenu);
-			}
-		}
-
-		menu.Append(-1, fmt_tl("Thesaurus suggestions for \"%s\"", currentWord), thesMenu);
-	}
-	else
-		menu.Append(EDIT_MENU_THESAURUS,_("No thesaurus suggestions"))->Enable(false);
-
-	// Append language list
-	menu.Append(-1,_("Thesaurus language"), GetLanguagesMenu(
-		EDIT_MENU_THES_LANGS,
-		to_wx(OPT_GET("Tool/Thesaurus/Language")->GetString()),
-		to_wx(thesaurus->GetLanguageList())));
-	menu.AppendSeparator();
-}
-
-wxMenu *SubsTextEditCtrl::GetLanguagesMenu(int base_id, wxString const& curLang, wxArrayString const& langs) {
-	auto languageMenu = new wxMenu;
-	languageMenu->AppendRadioItem(base_id, _("Disable"))->Check(curLang.empty());
-
-	for (size_t i = 0; i < langs.size(); ++i)
-		languageMenu->AppendRadioItem(base_id + i + 1, LocalizedLanguageName(langs[i]))->Check(langs[i] == curLang);
-
-	return languageMenu;
-}
-
-void SubsTextEditCtrl::OnUseSuggestion(wxCommandEvent &event) {
-	std::string suggestion;
-	int sugIdx = event.GetId() - EDIT_MENU_THESAURUS_SUGS;
-	if (sugIdx >= 0)
-		suggestion = thesSugs[sugIdx];
-	else
-		suggestion = sugs[event.GetId() - EDIT_MENU_SUGGESTIONS];
-
-	size_t pos;
-	while ((pos = suggestion.rfind('(')) != std::string::npos) {
-		// If there's only one suggestion for a word it'll be in the form "(noun) word",
-		// so we need to trim the "(noun) " part
-		if (pos == 0) {
-			pos = suggestion.find(')');
-			if (pos != std::string::npos) {
-				if (pos + 1< suggestion.size() && suggestion[pos + 1] == ' ') ++pos;
-				suggestion.erase(0, pos + 1);
-			}
-			break;
-		}
-
-		// Some replacements have notes about their usage after the word in the
-		// form "word (generic term)" that we need to remove (plus the leading space)
-		suggestion.resize(pos - 1);
-	}
-
-	// line_text needs to get cleared before SetTextRaw to ensure it gets reparsed
-	std::string new_text;
-	swap(line_text, new_text);
-	SetTextRaw(new_text.replace(currentWordPos.first, currentWordPos.second, suggestion).c_str());
-
-	SetSelection(currentWordPos.first, currentWordPos.first + suggestion.size());
-	SetFocus();
-}
-
-void SubsTextEditCtrl::OnSetDicLanguage(wxCommandEvent &event) {
-	std::vector<std::string> langs = spellchecker->GetLanguageList();
-
-	int index = event.GetId() - EDIT_MENU_DIC_LANGS - 1;
-	std::string lang;
-	if (index >= 0)
-		lang = langs[index];
-
-	OPT_SET("Tool/Spell Checker/Language")->SetString(lang);
-
-	UpdateStyle();
-}
-
-void SubsTextEditCtrl::OnSetThesLanguage(wxCommandEvent &event) {
-	if (!thesaurus) return;
-
-	std::vector<std::string> langs = thesaurus->GetLanguageList();
-
-	int index = event.GetId() - EDIT_MENU_THES_LANGS - 1;
-	std::string lang;
-	if (index >= 0) lang = langs[index];
-	OPT_SET("Tool/Thesaurus/Language")->SetString(lang);
-
-	UpdateStyle();
-}
-
-std::pair<int, int> SubsTextEditCtrl::GetBoundsOfWordAtPosition(int pos) {
-	int len = 0;
-	for (auto const& tok : tokenized_line) {
-		if (len + (int)tok.length > pos) {
-			if (tok.type == agi::ass::DialogueTokenType::WORD)
-				return {len, tok.length};
-			return {0, 0};
-		}
-		len += tok.length;
-	}
-
-	return {0, 0};
+void FrameMain::OnMouseWheel(wxMouseEvent &evt) {
+	ForwardMouseWheelEvent(this, evt);
 }
