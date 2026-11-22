@@ -37,9 +37,8 @@ class ColourButton: public wxButton {
 
 public:
 	void SetColor(agi::Color color) {
-		SetClientData(0, new agi::Color(color));
-		SetLabel(wxEmptyString);
-		Refresh();
+		colour = color;
+		UpdateBitmap();
 	}
 	/// Constructor
 	/// @param parent Parent window
