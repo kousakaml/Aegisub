@@ -35,6 +35,7 @@
 #include "format.h"
 #include "options.h"
 #include "include/aegisub/context.h"
+#include "include/aegisub/hotkey.h"
 #include "include/aegisub/spellchecker.h"
 #include "selection_controller.h"
 #include "text_selection_controller.h"
@@ -207,6 +208,14 @@ void SubsTextEditCtrl::OnLoseFocus(wxFocusEvent &event) {
 
 void SubsTextEditCtrl::OnKeyDown(wxKeyEvent &event) {
 	if (osx::ime::process_key_event(this, event)) return;
+
+	if (context) {
+		if (hotkey::check("Subtitle Edit Box", context, event) || hotkey::check("Default", context, event)) {
+			event.Skip(false);
+			return;
+		}
+	}
+
 	event.Skip();
 
 	// Workaround for wxSTC eating tabs.
