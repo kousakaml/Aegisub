@@ -44,7 +44,7 @@ jobs:
               -Dbestsource=enabled
               -Dvapoursynth=enabled
           - name: Windows MSVC Release (wx master)
-            os: windows-latest
+            os: [self-hosted, Windows, X64]
             msvc: true
             buildtype: release
             args: >-
