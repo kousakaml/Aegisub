@@ -69,6 +69,23 @@
 #include <wx/statline.h>
 #include <wx/sysopt.h>
 
+#ifdef _WIN32
+#include <imm.h>
+#pragma comment(lib, "imm32.lib")
+
+namespace {
+	void DisableImeRecursively(wxWindow *win, wxWindow *keep_ime_root) {
+		if (!win || win == keep_ime_root) return;
+		if (HWND hwnd = static_cast<HWND>(win->GetHWND())) {
+			ImmAssociateContext(hwnd, nullptr);
+		}
+		for (wxWindow *child : win->GetChildren()) {
+			DisableImeRecursively(child, keep_ime_root);
+		}
+	}
+}
+#endif
+
 enum {
 	ID_APP_TIMER_STATUSCLEAR = 12002
 };
@@ -196,6 +213,10 @@ void FrameMain::InitContents() {
 
 	StartupLog("Create subtitle editing box");
 	auto EditBox = new SubsEditBox(Panel, context.get());
+
+#ifdef _WIN32
+	DisableImeRecursively(this, EditBox);
+#endif
 
 	StartupLog("Arrange main sizers");
 	ToolsSizer = new wxBoxSizer(wxVERTICAL);
