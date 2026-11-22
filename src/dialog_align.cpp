@@ -139,7 +139,6 @@ namespace {
 
 		Bind(wxEVT_BUTTON, &DialogAlignToVideo::process, this, wxID_OK);
 		Bind(wxEVT_LEFT_DCLICK, &DialogAlignToVideo::process, this, preview_frame->GetId());
-		SetIcon(GETICON(button_align_16));
 		if (maximized)
 			wxDialog::Maximize(true);
 	}
@@ -362,7 +361,7 @@ namespace {
 		selected_color->SetColor(agi::Color(r, g, b));
 	}
 
-	void DialogAlignToVideo::update_from_textbox(wxCommandEvent & evt)
+	void DialogAlignToVideo::update_from_textbox(wxCommandEvent &)
 	{
 		update_from_textbox();
 	}
