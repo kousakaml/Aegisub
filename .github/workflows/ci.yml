@@ -65,6 +65,15 @@ build:
               -Dlibass:fontconfig=disabled
               -Dffmpeg:libdav1d=disabled
               -Dc_args="-D__STDC_NO_ATOMICS__=1"
+              -Dharfbuzz:glib=disabled
+              -Dharfbuzz:gobject=disabled
+              -Dharfbuzz:tests=disabled
+              -Dharfbuzz:docs=disabled
+              -Dfribidi:tests=false
+              -Dfribidi:docs=false
+              -Dlibass:fontconfig=disabled
+              -Dffmpeg:libdav1d=disabled
+              -Dc_args="-D__STDC_NO_ATOMICS__=1"
 
       - uses: actions/setup-python@v7
         with:
