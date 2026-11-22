@@ -42,7 +42,7 @@ jobs:
       matrix:
         config:
           - name: Windows MSVC Release
-            os: windows-latest
+            os: [self-hosted, Windows, X64]
             sccache-key: windows-x86_64-msvc
             msvc: true
             devenv: |
