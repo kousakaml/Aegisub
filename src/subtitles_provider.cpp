@@ -6,8 +6,8 @@
 //
 // THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 // WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-// ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DAMAGES
 // WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 // ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
@@ -26,6 +26,8 @@
 #include "subtitles_provider_csri.h"
 #include "subtitles_provider_libass.h"
 
+#include <regex>
+
 namespace {
 	struct factory {
 		std::string name;
@@ -43,6 +45,18 @@ namespace {
 #endif
 		factories.push_back(factory{"libass", "", libass::Create, false});
 		return factories;
+	}
+
+	// 將帶有 \pos(x,y) 的簡體預覽行 Y 座標往下偏移，避免與繁體重疊
+	std::string offset_pos_y(std::string const& text, int dy) {
+		static const std::regex pos_rx(R"(\\pos\(\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\))");
+		std::smatch m;
+		if (std::regex_search(text, m, pos_rx)) {
+			double y = std::stod(m[2].str()) + dy;
+			std::string repl = "\\pos(" + m[1].str() + "," + std::to_string(static_cast<int>(y)) + ")";
+			return std::regex_replace(text, pos_rx, repl, std::regex_constants::format_first_only);
+		}
+		return text;
 	}
 }
 
@@ -88,10 +102,6 @@ void SubtitlesProvider::LoadSubtitles(AssFile *subs, int time) {
 		push_line(line.GetEntryData());
 
 	if (!subs->Attachments.empty()) {
-		// TODO: some scripts may have a lot of attachments,
-		// so ideally we'd want to write only those actually used on the requested video frame,
-		// but this would require some pre-parsing of the attached font files with FreeType,
-		// which isn't probably trivial.
 		push_header("[Fonts]\n");
 		for (auto const& attachment : subs->Attachments)
 			if (attachment.Group() == AssEntryGroup::FONT)
@@ -100,8 +110,44 @@ void SubtitlesProvider::LoadSubtitles(AssFile *subs, int time) {
 
 	push_header("[Events]\n");
 	for (auto const& line : subs->Events) {
-		if (!line.Comment && (time < 0 || !(line.Start > time || line.End <= time)))
-			push_line(line.GetEntryData());
+		if (!line.Comment && (time < 0 || !(line.Start > time || line.End <= time))) {
+			std::string entry = line.GetEntryData();
+			size_t sep = entry.find("|||");
+			if (sep == std::string::npos) {
+				push_line(entry);
+			}
+			else {
+				// 找到 Dialogue 前 9 個逗號（Text 欄位起點）
+				size_t pos = 0;
+				for (int i = 0; i < 9 && pos != std::string::npos; ++i) {
+					pos = entry.find(',', pos);
+					if (pos != std::string::npos) ++pos;
+				}
+
+				if (pos != std::string::npos && sep >= pos) {
+					std::string prefix = entry.substr(0, pos);
+					std::string primary = entry.substr(pos, sep - pos);
+					std::string secondary = entry.substr(sep + 3);
+
+					// 若包含卡拉OK標籤 (\k / \K / \kf / \ko) 或固定座標 (\pos)，拆成兩條獨立事件讓時間軸與位置各自獨立計算
+					bool has_karaoke = (primary.find("\\k") != std::string::npos || primary.find("\\K") != std::string::npos);
+					bool has_pos = (primary.find("\\pos(") != std::string::npos);
+
+					if (has_karaoke || has_pos) {
+						push_line(prefix + primary);
+						std::string sec_line = has_pos ? offset_pos_y(secondary, 55) : ("{\\an8}" + secondary);
+						push_line(prefix + sec_line);
+					}
+					else {
+						// 一般對白行直接以 \N 換行呈現上下雙語
+						push_line(prefix + primary + "\\N" + secondary);
+					}
+				}
+				else {
+					push_line(entry);
+				}
+			}
+		}
 	}
 
 	LoadSubtitles(&buffer[0], buffer.size());
