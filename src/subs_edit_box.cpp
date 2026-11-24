@@ -95,8 +95,6 @@ void time_edit_char_hook(wxKeyEvent &event) {
 		event.Skip();
 }
 
-// Passing a pointer-to-member directly to a function sometimes does not work
-// in VC++ 2015 Update 2, with it instead passing a null pointer
 const auto AssDialogue_Actor = &AssDialogue::Actor;
 const auto AssDialogue_Effect = &AssDialogue::Effect;
 }
@@ -114,7 +112,6 @@ SubsEditBox::SubsEditBox(wxWindow *parent, agi::Context *context)
 	comment_box = new wxCheckBox(this,-1,_("&Comment"));
 	comment_box->SetToolTip(_("Comment this line out. Commented lines don't show up on screen."));
 #ifdef __WXGTK__
-	// Only supported in wxgtk
 	comment_box->SetCanFocus(false);
 #endif
 	top_sizer->Add(comment_box, 0, wxRIGHT | wxALIGN_CENTER, 5);
@@ -197,15 +194,29 @@ SubsEditBox::SubsEditBox(wxWindow *parent, agi::Context *context)
 	main_sizer->Add(middle_left_sizer,0,wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,3);
 	main_sizer->Add(middle_right_sizer,0,wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,3);
 
-	// Text editor
-	edit_ctrl = new SubsTextEditCtrl(this, FromDIP(wxSize(300,50)), (OPT_GET("App/Dark Mode")->GetBool() ? wxBORDER_SIMPLE : wxBORDER_SUNKEN), c);
+	// Text editors (Primary + Bilingual Secondary)
+	long editor_border = OPT_GET("App/Dark Mode")->GetBool() ? wxBORDER_SIMPLE : wxBORDER_SUNKEN;
+	edit_ctrl = new SubsTextEditCtrl(this, FromDIP(wxSize(300,36)), editor_border, c);
 	edit_ctrl->Bind(wxEVT_CHAR_HOOK, &SubsEditBox::OnKeyDown, this);
+	edit_ctrl->Bind(wxEVT_SET_FOCUS, [this](wxFocusEvent &evt) {
+		c->textSelectionController->SetControl(edit_ctrl);
+		evt.Skip();
+	});
 
-	secondary_editor = new wxTextCtrl(this, -1, "", wxDefaultPosition, FromDIP(wxSize(300,50)), (OPT_GET("App/Dark Mode")->GetBool() ? wxBORDER_SIMPLE : wxBORDER_SUNKEN) | wxTE_MULTILINE | wxTE_READONLY);
+	bilingual_ctrl = new SubsTextEditCtrl(this, FromDIP(wxSize(300,36)), editor_border, c);
+	bilingual_ctrl->Bind(wxEVT_CHAR_HOOK, &SubsEditBox::OnKeyDown, this);
+	bilingual_ctrl->Bind(wxEVT_SET_FOCUS, [this](wxFocusEvent &evt) {
+		c->textSelectionController->SetControl(bilingual_ctrl);
+		evt.Skip();
+	});
+
+	secondary_editor = new wxTextCtrl(this, -1, "", wxDefaultPosition, FromDIP(wxSize(300,36)), editor_border | wxTE_MULTILINE | wxTE_READONLY);
 
 	main_sizer->Add(secondary_editor,1,wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,3);
 	main_sizer->Add(edit_ctrl,1,wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,3);
+	main_sizer->Add(bilingual_ctrl,1,wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM,3);
 	main_sizer->Hide(secondary_editor);
+	main_sizer->Hide(bilingual_ctrl);
 
 	bottom_sizer = new wxBoxSizer(wxHORIZONTAL);
 	bottom_sizer->Add(MakeBottomButton("edit/revert"), wxSizerFlags().Border(wxRIGHT));
@@ -219,6 +230,9 @@ SubsEditBox::SubsEditBox(wxWindow *parent, agi::Context *context)
 
 	edit_ctrl->Bind(wxEVT_STC_MODIFIED, &SubsEditBox::OnChange, this);
 	edit_ctrl->SetModEventMask(wxSTC_MOD_INSERTTEXT | wxSTC_MOD_DELETETEXT | wxSTC_STARTACTION);
+
+	bilingual_ctrl->Bind(wxEVT_STC_MODIFIED, &SubsEditBox::OnChange, this);
+	bilingual_ctrl->SetModEventMask(wxSTC_MOD_INSERTTEXT | wxSTC_MOD_DELETETEXT | wxSTC_STARTACTION);
 
 	Bind(wxEVT_TEXT, &SubsEditBox::OnLayerEnter, this, layer->GetId());
 	Bind(wxEVT_SPINCTRL, &SubsEditBox::OnLayerEnter, this, layer->GetId());
@@ -342,6 +356,18 @@ void SubsEditBox::OnCommit(int type) {
 	UpdateFields(type, true);
 }
 
+void SubsEditBox::UpdateBilingualVisibility(bool show) {
+	if (bilingual_visible == show) return;
+	bilingual_visible = show;
+	Freeze();
+	GetSizer()->Show(bilingual_ctrl, show);
+	Fit();
+	SetMinSize(GetSize());
+	if (GetParent() && GetParent()->GetSizer())
+		GetParent()->GetSizer()->Layout();
+	Thaw();
+}
+
 void SubsEditBox::UpdateFields(int type, bool repopulate_lists) {
 	if (!line) return;
 
@@ -352,8 +378,22 @@ void SubsEditBox::UpdateFields(int type, bool repopulate_lists) {
 	}
 
 	if (type & AssFile::COMMIT_DIAG_TEXT) {
-		edit_ctrl->SetTextTo(line->Text);
-		UpdateCharacterCount(line->Text);
+		std::string const& raw = line->Text.get();
+		size_t sep = raw.find("|||");
+		if (sep != std::string::npos) {
+			UpdateBilingualVisibility(true);
+			std::string primary = raw.substr(0, sep);
+			std::string secondary = raw.substr(sep + 3);
+			edit_ctrl->SetTextTo(primary);
+			bilingual_ctrl->SetTextTo(secondary);
+			UpdateCharacterCount(primary);
+		}
+		else {
+			UpdateBilingualVisibility(false);
+			edit_ctrl->SetTextTo(raw);
+			bilingual_ctrl->SetTextTo("");
+			UpdateCharacterCount(raw);
+		}
 	}
 
 	if (type & AssFile::COMMIT_DIAG_META) {
@@ -435,16 +475,29 @@ void SubsEditBox::UpdateFrameTiming(agi::vfr::Framerate const& fps) {
 }
 
 void SubsEditBox::OnKeyDown(wxKeyEvent &event) {
-	if (!osx::ime::process_key_event(edit_ctrl, event))
+	SubsTextEditCtrl *active_edit = (event.GetEventObject() == bilingual_ctrl) ? bilingual_ctrl : edit_ctrl;
+	if (!osx::ime::process_key_event(active_edit, event))
 		hotkey::check("Subtitle Edit Box", c, event);
 }
 
 void SubsEditBox::OnChange(wxStyledTextEvent &event) {
-	if (line && edit_ctrl->GetTextRaw().data() != line->Text.get()) {
+	if (!line) return;
+
+	auto p_buf = edit_ctrl->GetTextRaw();
+	std::string primary(p_buf.data(), p_buf.length());
+	std::string combined = primary;
+
+	if (bilingual_visible) {
+		auto s_buf = bilingual_ctrl->GetTextRaw();
+		std::string secondary(s_buf.data(), s_buf.length());
+		combined = primary + "|||" + secondary;
+	}
+
+	if (combined != line->Text.get()) {
 		if (event.GetModificationType() & wxSTC_STARTACTION)
 			commit_id = -1;
 		CommitText(_("modify text"));
-		UpdateCharacterCount(line->Text);
+		UpdateCharacterCount(primary);
 	}
 }
 
@@ -477,8 +530,14 @@ void SubsEditBox::SetSelectedRows(T AssDialogueBase::*field, wxString const& val
 }
 
 void SubsEditBox::CommitText(wxString const& desc) {
-	auto data = edit_ctrl->GetTextRaw();
-	SetSelectedRows(&AssDialogue::Text, boost::flyweight<std::string>(data.data(), data.length()), desc, AssFile::COMMIT_DIAG_TEXT, true);
+	auto p_buf = edit_ctrl->GetTextRaw();
+	std::string combined(p_buf.data(), p_buf.length());
+	if (bilingual_visible) {
+		auto s_buf = bilingual_ctrl->GetTextRaw();
+		combined += "|||";
+		combined.append(s_buf.data(), s_buf.length());
+	}
+	SetSelectedRows(&AssDialogue::Text, boost::flyweight<std::string>(combined), desc, AssFile::COMMIT_DIAG_TEXT, true);
 }
 
 void SubsEditBox::CommitTimes(TimeField field) {
@@ -526,9 +585,6 @@ void SubsEditBox::CommitTimes(TimeField field) {
 }
 
 void SubsEditBox::SetDurationField() {
-	// With VFR, the frame count calculated from the duration in time can be
-	// completely wrong (since the duration is calculated as if it were a start
-	// time), so we need to explicitly set it with the correct units.
 	if (by_frame->GetValue())
 		duration->SetFrame(end_time->GetFrame() - start_time->GetFrame() + 1);
 	else
@@ -578,6 +634,7 @@ void SubsEditBox::SetControlsState(bool state) {
 	if (!state) {
 		wxEventBlocker blocker(this);
 		edit_ctrl->SetTextTo("");
+		bilingual_ctrl->SetTextTo("");
 	}
 }
 
