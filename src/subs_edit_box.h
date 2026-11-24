@@ -83,6 +83,8 @@ class SubsEditBox final : public wxPanel {
 	bool button_bar_split = true;
 	/// Are the controls currently enabled?
 	bool controls_enabled = true;
+	/// Is bilingual second edit box visible?
+	bool bilingual_visible = false;
 
 	agi::Context *c;
 
@@ -159,6 +161,7 @@ class SubsEditBox final : public wxPanel {
 	void OnSize(wxSizeEvent &event);
 	void OnSplit(wxCommandEvent&);
 	void DoOnSplit(bool show_original);
+	void UpdateBilingualVisibility(bool show);
 
 	void SetPlaceholderCtrl(wxControl *ctrl, wxString const& value);
 
@@ -203,6 +206,7 @@ class SubsEditBox final : public wxPanel {
 	void SetDurationField();
 
 	SubsTextEditCtrl *edit_ctrl;
+	SubsTextEditCtrl *bilingual_ctrl;
 	wxTextCtrl *secondary_editor;
 
 public:
