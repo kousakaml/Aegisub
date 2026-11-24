@@ -58,6 +58,7 @@
 #include <libaegisub/util.h>
 
 #include <functional>
+#include <regex>
 #include <unordered_set>
 
 #include <wx/bmpbuttn.h>
@@ -531,11 +532,36 @@ void SubsEditBox::SetSelectedRows(T AssDialogueBase::*field, wxString const& val
 
 void SubsEditBox::CommitText(wxString const& desc) {
 	auto p_buf = edit_ctrl->GetTextRaw();
-	std::string combined(p_buf.data(), p_buf.length());
+	std::string primary(p_buf.data(), p_buf.length());
+	std::string combined = primary;
+
 	if (bilingual_visible) {
 		auto s_buf = bilingual_ctrl->GetTextRaw();
-		combined += "|||";
-		combined.append(s_buf.data(), s_buf.length());
+		std::string secondary(s_buf.data(), s_buf.length());
+
+		// 若繁體（上框）帶有 \pos(x,y)，自動同步到簡體（下框）
+		static const std::regex pos_rx(R"(\\pos\(\s*[+-]?\d+(?:\.\d+)?\s*,\s*[+-]?\d+(?:\.\d+)?\s*\))");
+		std::smatch m;
+		if (std::regex_search(primary, m, pos_rx)) {
+			std::string p_pos = m[0].str();
+			std::string updated_sec = secondary;
+			if (std::regex_search(updated_sec, pos_rx)) {
+				updated_sec = std::regex_replace(updated_sec, pos_rx, p_pos, std::regex_constants::format_first_only);
+			}
+			else if (!updated_sec.empty() && updated_sec[0] == '{') {
+				updated_sec.insert(1, p_pos);
+			}
+			else {
+				updated_sec = "{" + p_pos + "}" + updated_sec;
+			}
+			if (updated_sec != secondary) {
+				secondary = std::move(updated_sec);
+				wxEventBlocker blocker(bilingual_ctrl);
+				bilingual_ctrl->SetTextTo(secondary);
+			}
+		}
+
+		combined = primary + "|||" + secondary;
 	}
 	SetSelectedRows(&AssDialogue::Text, boost::flyweight<std::string>(combined), desc, AssFile::COMMIT_DIAG_TEXT, true);
 }
