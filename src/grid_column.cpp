@@ -9,8 +9,9 @@
 // MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
 // ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 // WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-// ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-// OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+// ACTION OF CONTRACT, NEGLIGENCE OR OTHERWISE) ARISING OUT OF THE USE OF
+// THIS SOFTWARE, EVEN IF ADVISED OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+// THE POSSIBILITY OF SUCH DAMAGE.
 //
 // Aegisub Project http://www.aegisub.org/
 
@@ -350,7 +351,9 @@ public:
 
 	int CPS(const AssDialogue *d) const {
 		int duration = d->End - d->Start;
-		auto const& text = d->Text.get();
+		auto const& raw_text = d->Text.get();
+		size_t sep = raw_text.find("|||");
+		std::string text = (sep != std::string::npos) ? raw_text.substr(0, sep) : raw_text;
 
 		if (duration <= 100 || text.size() > static_cast<size_t>(duration))
 			return -1;
@@ -392,11 +395,34 @@ public:
 	}
 };
 
+wxString format_grid_text(std::string const& text, int mode, wxString const& replace_char) {
+	wxString str;
+	if (mode == 0)
+		str = to_wx(text);
+	else {
+		str.reserve(text.size());
+		size_t start = 0, pos;
+		while ((pos = text.find('{', start)) != std::string::npos) {
+			str += to_wx(text.substr(start, pos - start));
+			if (mode == 1)
+				str += replace_char;
+			start = text.find('}', pos);
+			if (start != std::string::npos) ++start;
+		}
+		if (start != std::string::npos)
+			str += to_wx(text.substr(start));
+	}
+
+	if (str.size() > 512)
+		str = str.Left(512) + "...";
+	return str;
+}
+
 class GridColumnText final : public GridColumn {
 	const agi::OptionValue *override_mode;
 	wxString replace_char;
-
 	agi::signal::Connection replace_char_connection;
+	mutable bool has_bilingual = false;
 
 public:
 	GridColumnText()
@@ -414,36 +440,63 @@ public:
 	bool RefreshOnTextChange() const override { return true; }
 
 	wxString Value(const AssDialogue *d, const agi::Context *) const override {
-		wxString str;
-		int mode = override_mode->GetInt();
-
-		// Show overrides
-		if (mode == 0)
-			str = to_wx(d->Text);
-		// Hidden overrides
-		else {
-			auto const& text = d->Text.get();
-			str.reserve(text.size());
-			size_t start = 0, pos;
-			while ((pos = text.find('{', start)) != std::string::npos) {
-				str += to_wx(text.substr(start, pos - start));
-				if (mode == 1)
-					str += replace_char;
-				start = text.find('}', pos);
-				if (start != std::string::npos) ++start;
-			}
-			if (start != std::string::npos)
-				str += to_wx(text.substr(start));
-		}
-
-		// Cap length and set text
-		if (str.size() > 512)
-			str = str.Left(512) + "...";
-		return str;
+		auto const& raw = d->Text.get();
+		size_t sep = raw.find("|||");
+		std::string primary = (sep != std::string::npos) ? raw.substr(0, sep) : raw;
+		return format_grid_text(primary, override_mode->GetInt(), replace_char);
 	}
 
-	int Width(const agi::Context *, WidthHelper &) const override {
-		return 5000;
+	int Width(const agi::Context *c, WidthHelper &) const override {
+		has_bilingual = false;
+		if (c && c->ass) {
+			for (AssDialogue const& line : c->ass->Events) {
+				if (line.Text.get().find("|||") != std::string::npos) {
+					has_bilingual = true;
+					break;
+				}
+			}
+		}
+		// 若為雙語模式，固定給主文字欄適當寬度（例如 420px），讓右側副文字欄也能同畫面並排顯示
+		return has_bilingual ? 420 : 5000;
+	}
+};
+
+class GridColumnSecondaryText final : public GridColumn {
+	const agi::OptionValue *override_mode;
+	wxString replace_char;
+	agi::signal::Connection replace_char_connection;
+
+public:
+	GridColumnSecondaryText()
+	: override_mode(OPT_GET("Subtitle/Grid/Hide Overrides"))
+	, replace_char(to_wx(OPT_GET("Subtitle/Grid/Hide Overrides Char")->GetString()))
+	, replace_char_connection(OPT_SUB("Subtitle/Grid/Hide Overrides Char",
+		[&](agi::OptionValue const& v) { replace_char = to_wx(v.GetString()); }))
+	{
+	}
+
+	COLUMN_HEADER(_("Text (CN)"))
+	COLUMN_DESCRIPTION(_("Secondary Text"))
+	bool Centered() const override { return false; }
+	bool CanHide() const override { return true; }
+	bool RefreshOnTextChange() const override { return true; }
+
+	wxString Value(const AssDialogue *d, const agi::Context *) const override {
+		auto const& raw = d->Text.get();
+		size_t sep = raw.find("|||");
+		if (sep == std::string::npos) return wxS("");
+		return format_grid_text(raw.substr(sep + 3), override_mode->GetInt(), replace_char);
+	}
+
+	int Width(const agi::Context *c, WidthHelper &) const override {
+		if (c && c->ass) {
+			for (AssDialogue const& line : c->ass->Events) {
+				if (line.Text.get().find("|||") != std::string::npos)
+					return 5000;
+			}
+		}
+		// 單語檔案自動隱藏不佔空間
+		return 0;
 	}
 };
 
@@ -469,5 +522,6 @@ std::vector<std::unique_ptr<GridColumn>> GetGridColumns() {
 	ret.push_back(make<GridColumnMarginRight>());
 	ret.push_back(make<GridColumnMarginVert>());
 	ret.push_back(make<GridColumnText>());
+	ret.push_back(make<GridColumnSecondaryText>());
 	return ret;
 }
